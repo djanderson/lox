@@ -5,6 +5,7 @@ use std::io::prelude::*;
 use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::{error::ErrorKind::ValueValidation, CommandFactory, Parser};
+use lox::scanner::Scanner;
 
 /// Lox interpreter from Crafting Interpreters
 #[derive(Parser, Debug)]
@@ -32,7 +33,7 @@ fn main() -> Result<()> {
 
 fn run_file(file: &Utf8PathBuf) -> Result<()> {
     let input = fs::read_to_string(file)?;
-    run(&input)
+    run(input)
 }
 
 fn run_repl() -> Result<()> {
@@ -40,17 +41,24 @@ fn run_repl() -> Result<()> {
         let Some(line) = readline()? else {
             break;
         };
-        let line = line.trim();
+        let line = line.trim().to_owned();
         if line.is_empty() {
             continue;
         }
-        run(line)?;
+        let result = run(line);
+        match result {
+            Ok(_) => println!(" => TODO"),
+            Err(e) => eprintln!("{e}"),
+        }
     }
     Ok(())
 }
 
-fn run(input: &str) -> Result<()> {
-    println!("Running input {:#?}", input);
+fn run(input: String) -> Result<()> {
+    let scanner = Scanner::new(input);
+    for token in scanner.tokens()? {
+        println!("{token:#?}");
+    }
     Ok(())
 }
 
