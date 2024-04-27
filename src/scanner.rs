@@ -19,10 +19,10 @@ impl Scanner {
         let mut line = 0;
         let mut last_newline_position = 0;
         let mut column;
-        let mut chars = self.source.chars().enumerate().peekable();
+        let mut source = self.source.chars().enumerate().peekable();
 
-        while let Some((idx, c)) = chars.next() {
-            column = (idx - last_newline_position) + 1;
+        while let Some((index, c)) = source.next() {
+            column = (index - last_newline_position) + 1;
             let token = match c {
                 '(' => Token::LeftParen,
                 ')' => Token::RightParen,
@@ -35,41 +35,42 @@ impl Scanner {
                 ';' => Token::Semicolon,
                 '*' => Token::Star,
                 '!' => {
-                    if let Some((_, '=')) = chars.peek() {
-                        chars.next();
+                    if let Some('=') = source.peek().map(|t| t.1) {
+                        source.next();
                         Token::BangEqual
                     } else {
                         Token::Bang
                     }
                 }
                 '=' => {
-                    if let Some((_, '=')) = chars.peek() {
-                        chars.next();
+                    if let Some('=') = source.peek().map(|t| t.1) {
+                        source.next();
                         Token::EqualEqual
                     } else {
                         Token::Equal
                     }
                 }
                 '<' => {
-                    if let Some((_, '=')) = chars.peek() {
-                        chars.next();
+                    if let Some('=') = source.peek().map(|t| t.1) {
+                        source.next();
                         Token::LessEqual
                     } else {
                         Token::Less
                     }
                 }
                 '>' => {
-                    if let Some((_, '=')) = chars.peek() {
-                        chars.next();
+                    if let Some('=') = source.peek().map(|t| t.1) {
+                        source.next();
                         Token::GreaterEqual
                     } else {
                         Token::Greater
                     }
                 }
                 '/' => {
-                    if let Some((_, '/')) = chars.peek() {
+                    let mut chars = source.clone().map(|t| t.1).peekable();
+                    if let Some('/') = chars.peek() {
                         // Comment, consume the rest of the line.
-                        for (i, c) in chars.by_ref() {
+                        for (i, c) in source.by_ref() {
                             if c == '\n' {
                                 last_newline_position = i;
                                 break;
@@ -85,7 +86,7 @@ impl Scanner {
                     continue;
                 }
                 '\n' => {
-                    last_newline_position = idx;
+                    last_newline_position = index;
                     line += 1;
                     continue;
                 }
@@ -94,15 +95,16 @@ impl Scanner {
                     // Track where the string starts.
                     let start_line = line;
                     let start_column = column;
-                    let string_start = &self.source[idx + 1..];
+                    let string_start = &self.source[index + 1..];
                     let mut length = 0;
+                    let mut lookahead = source.clone().map(|t| t.1).peekable();
                     loop {
-                        if let Some(p) = chars.position(|(_, c)| c == '\n' || c == '"') {
+                        if let Some(p) = lookahead.position(|c| c == '\n' || c == '"') {
                             length += p;
                             if &string_start[length..length + 1] == "\n" {
                                 // Support multiline strings.
                                 line += 1;
-                                last_newline_position = length;
+                                last_newline_position = index + length;
                             } else {
                                 break;
                             }
@@ -119,40 +121,24 @@ impl Scanner {
                             });
                         }
                     }
+                    source.nth(length); // advance source past closing quote
                     Token::String(&string_start[..length])
                 }
                 c @ '0'..='9' => {
-                    let mut number = String::with_capacity(1);
-                    number.push(c);
-                    column += 1;
-                    let mut lookahead = chars.clone();
-                    while lookahead
-                        .by_ref()
-                        .peek()
-                        .is_some_and(|(_, c)| c.is_ascii_digit())
-                    {
-                        lookahead.next();
-                        number.push(chars.next().map(|t| t.1).expect("next char is number"));
-                        column += 1;
+                    let mut number = String::from(c);
+                    let mut lookahead = source.clone().map(|t| t.1).peekable();
+                    while lookahead.peek().is_some_and(|c| c.is_ascii_digit()) {
+                        number.push(lookahead.next().unwrap());
+                        source.next();
                     }
-                    if lookahead.next().is_some_and(|t| t.1 == '.')
-                        && lookahead.peek().is_some_and(|t| t.1.is_ascii_digit())
+                    if lookahead.next().is_some_and(|c| c == '.')
+                        && lookahead.peek().is_some_and(|c| c.is_ascii_digit())
                     {
-                        number.push(
-                            chars
-                                .next()
-                                .map(|t| t.1)
-                                .expect("next char is decimal point"),
-                        );
-                        column += 1;
-                        for (_, c) in lookahead.by_ref() {
-                            if c.is_ascii_digit() {
-                                number
-                                    .push(chars.next().map(|t| t.1).expect("next char is number"));
-                                column += 1;
-                                continue;
-                            }
-                            break;
+                        number.push('.');
+                        source.next();
+                        for c in lookahead.take_while(|c| c.is_ascii_digit()) {
+                            number.push(c);
+                            source.next();
                         }
                     }
                     Token::Number(number.parse().expect("number should parse as f32"))
