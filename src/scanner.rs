@@ -1,5 +1,3 @@
-use std::str::Chars;
-
 use crate::errors::LoxError;
 use crate::token::Token;
 
