@@ -115,7 +115,7 @@ impl Scanner {
                                     .source
                                     .lines()
                                     .nth(start_line)
-                                    .expect("currrent line is in source")
+                                    .expect("currrent line must be in source")
                                     .to_string(),
                                 line_number: start_line + 1,
                                 column_number: start_column,
@@ -130,7 +130,7 @@ impl Scanner {
                             .source
                             .lines()
                             .nth(line)
-                            .expect("currrent line is in source")
+                            .expect("currrent line must be in source")
                             .to_string(),
                         line_number: line + 1,
                         column_number: column,
