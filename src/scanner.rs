@@ -76,13 +76,13 @@ impl Scanner {
                 '/' => {
                     if lookahead(&chars, "/") {
                         // Comment, consume the rest of the line.
-                        // FIXME: rewrite in terms of chars.find()
-                        //while let Some(c) = chars.peek() {
-                        //    if *c == '\n' {
-                        //        break;
-                        //    }
-                        //    chars.next();
-                        //}
+                        for c in chars.by_ref() {
+                            if c == '\n' {
+                                break;
+                            }
+                        }
+                        column = 0;
+                        line += 1;
                         continue;
                     } else {
                         Token::Slash
