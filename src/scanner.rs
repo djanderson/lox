@@ -19,11 +19,6 @@ impl Scanner {
         let mut column = 0;
         let mut chars = self.source.as_str().chars();
 
-        fn lookahead(chars: &Chars, n: &str) -> bool {
-            let s = chars.as_str();
-            &s[..(n.len())] == n
-        }
-
         while let Some(c) = chars.next() {
             column += 1;
             let token = match c {
@@ -38,7 +33,7 @@ impl Scanner {
                 ';' => Token::Semicolon,
                 '*' => Token::Star,
                 '!' => {
-                    if lookahead(&chars, "=") {
+                    if chars.clone().next() == Some('=') {
                         chars.next();
                         column += 1;
                         Token::BangEqual
@@ -47,7 +42,7 @@ impl Scanner {
                     }
                 }
                 '=' => {
-                    if lookahead(&chars, "=") {
+                    if chars.clone().next() == Some('=') {
                         chars.next();
                         column += 1;
                         Token::EqualEqual
@@ -56,7 +51,7 @@ impl Scanner {
                     }
                 }
                 '<' => {
-                    if lookahead(&chars, "=") {
+                    if chars.clone().next() == Some('=') {
                         chars.next();
                         column += 1;
                         Token::LessEqual
@@ -65,7 +60,7 @@ impl Scanner {
                     }
                 }
                 '>' => {
-                    if lookahead(&chars, "=") {
+                    if chars.clone().next() == Some('=') {
                         chars.next();
                         column += 1;
                         Token::GreaterEqual
@@ -74,7 +69,7 @@ impl Scanner {
                     }
                 }
                 '/' => {
-                    if lookahead(&chars, "/") {
+                    if chars.clone().next() == Some('/') {
                         // Comment, consume the rest of the line.
                         for c in chars.by_ref() {
                             if c == '\n' {
