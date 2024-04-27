@@ -95,13 +95,13 @@ impl Scanner {
                     // Track where the string starts.
                     let start_line = line;
                     let start_column = column;
-                    let string_start = &self.source[index + 1..];
+                    let string = &self.source[index + 1..];
                     let mut length = 0;
                     let mut lookahead = source.clone().map(|t| t.1).peekable();
                     loop {
                         if let Some(p) = lookahead.position(|c| c == '\n' || c == '"') {
                             length += p;
-                            if &string_start[length..length + 1] == "\n" {
+                            if &string[length..length + 1] == "\n" {
                                 // Support multiline strings.
                                 line += 1;
                                 last_newline_position = index + length;
@@ -122,26 +122,26 @@ impl Scanner {
                         }
                     }
                     source.nth(length); // advance source past closing quote
-                    Token::String(&string_start[..length])
+                    Token::String(&string[..length])
                 }
-                c @ '0'..='9' => {
-                    let mut number = String::from(c);
+                '0'..='9' => {
+                    // Number literal.
+                    let number = &self.source[index..];
+                    let mut length = 1;
                     let mut lookahead = source.clone().map(|t| t.1).peekable();
                     while lookahead.peek().is_some_and(|c| c.is_ascii_digit()) {
-                        number.push(lookahead.next().unwrap());
-                        source.next();
+                        lookahead.next();
+                        length += 1;
                     }
                     if lookahead.next().is_some_and(|c| c == '.')
                         && lookahead.peek().is_some_and(|c| c.is_ascii_digit())
                     {
-                        number.push('.');
-                        source.next();
-                        for c in lookahead.take_while(|c| c.is_ascii_digit()) {
-                            number.push(c);
-                            source.next();
-                        }
+                        length += lookahead.take_while(|c| c.is_ascii_digit()).count() + 1;
                     }
-                    Token::Number(number.parse().expect("number should parse as f32"))
+                    if length > 1 {
+                        source.nth(length - 2); // advance source past number
+                    }
+                    Token::Number(number[..length].parse().expect("valid f32"))
                 }
                 // c if c == '_' || c.is_ascii_alphabetic() => {
 
