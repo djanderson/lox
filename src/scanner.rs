@@ -124,6 +124,32 @@ impl Scanner {
                     }
                     Token::String(&string_start[..length])
                 }
+                c @ '0'..='9' => {
+                    let mut number = String::with_capacity(1);
+                    number.push(c);
+                    let mut lookahead = chars.clone().peekable();
+                    while lookahead
+                        .by_ref()
+                        .peek()
+                        .is_some_and(|c| c.is_ascii_digit())
+                    {
+                        lookahead.next();
+                        number.push(chars.next().expect("next char is number"));
+                    }
+                    if lookahead.next() == Some('.')
+                        && lookahead.peek().is_some_and(|c| c.is_ascii_digit())
+                    {
+                        number.push(chars.next().expect("next char is decimal point"));
+                        for c in lookahead.by_ref() {
+                            if c.is_ascii_digit() {
+                                number.push(chars.next().expect("next char is number"));
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                    Token::Number(number.parse().expect("number should parse as f32"))
+                }
                 _ => {
                     return Err(LoxError::InvalidSyntax {
                         source_line: self
