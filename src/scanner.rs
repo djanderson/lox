@@ -69,14 +69,48 @@ impl Scanner {
                 '/' => {
                     let mut lookahead = source.clone().map(|t| t.1).peekable();
                     if let Some('/') = lookahead.peek() {
-                        // Comment, consume the rest of the line.
+                        // C++ style comment, consume the rest of the line.
                         for (i, c) in source.by_ref() {
                             if c == '\n' {
-                                last_newline_position = i;
+                                line += 1;
+                                last_newline_position = i + 1;
                                 break;
                             }
                         }
-                        line += 1;
+                        continue;
+                    } else if let Some('*') = lookahead.peek() {
+                        /* C-style comment, consume until its end. */
+                        // Track where the comment starts.
+                        lookahead.next();
+                        let start_line = line;
+                        let start_column = column;
+                        let mut length = 1;
+                        loop {
+                            let Some(p) = lookahead.position(|c| c == '*') else {
+                                return Err(LoxError::UnterminatedComment {
+                                    source_line: self
+                                        .source
+                                        .lines()
+                                        .nth(start_line)
+                                        .expect("currrent line must be in source")
+                                        .to_string(),
+                                    line_number: start_line + 1,
+                                    column_number: start_column,
+                                });
+                            };
+                            length += p + 1;
+                            if lookahead.peek().is_some_and(|c| *c == '/') {
+                                length += 1;
+                                break;
+                            }
+                        }
+                        // Advance source past the comment and record last newline.
+                        for (i, c) in source.by_ref().take(length) {
+                            if c == '\n' {
+                                line += 1;
+                                last_newline_position = i + 1;
+                            }
+                        }
                         continue;
                     } else {
                         Token::Slash
@@ -86,8 +120,8 @@ impl Scanner {
                     continue;
                 }
                 '\n' => {
-                    last_newline_position = index;
                     line += 1;
+                    last_newline_position = index + 1;
                     continue;
                 }
                 '"' => {
@@ -99,16 +133,7 @@ impl Scanner {
                     let mut length = 0;
                     let mut lookahead = source.clone().map(|t| t.1).peekable();
                     loop {
-                        if let Some(p) = lookahead.position(|c| c == '\n' || c == '"') {
-                            length += p;
-                            if &string[length..length + 1] == "\n" {
-                                // Support multiline strings.
-                                line += 1;
-                                last_newline_position = index + length;
-                            } else {
-                                break;
-                            }
-                        } else {
+                        let Some(p) = lookahead.position(|c| c == '\n' || c == '"') else {
                             return Err(LoxError::UnterminatedString {
                                 source_line: self
                                     .source
@@ -119,6 +144,15 @@ impl Scanner {
                                 line_number: start_line + 1,
                                 column_number: start_column,
                             });
+                        };
+                        length += p + 1;
+                        if &string[length - 1..length] == "\n" {
+                            line += 1;
+                            last_newline_position = index + 1 + length;
+                        } else {
+                            // At closing quote, string ends one character back.
+                            length -= 1;
+                            break;
                         }
                     }
                     source.nth(length); // advance source past closing quote
