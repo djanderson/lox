@@ -143,9 +143,37 @@ impl Scanner {
                     }
                     Token::Number(number[..length].parse().expect("valid f32"))
                 }
-                // c if c == '_' || c.is_ascii_alphabetic() => {
-
-                // }
+                c if c == '_' || c.is_ascii_alphabetic() => {
+                    // Reserved words and identifiers.
+                    let symbol = &self.source[index..];
+                    let mut length = 1;
+                    let lookahead = source.clone().map(|t| t.1).peekable();
+                    length += lookahead
+                        .take_while(|c| *c == '_' || c.is_ascii_alphanumeric())
+                        .count();
+                    if length > 1 {
+                        source.nth(length - 2); // advance source past symbol
+                    }
+                    match &symbol[..length] {
+                        "and" => Token::And,
+                        "class" => Token::Class,
+                        "else" => Token::Else,
+                        "false" => Token::False,
+                        "fun" => Token::Fun,
+                        "for" => Token::For,
+                        "if" => Token::If,
+                        "nil" => Token::Nil,
+                        "or" => Token::Or,
+                        "print" => Token::Print,
+                        "return" => Token::Return,
+                        "super" => Token::Super,
+                        "this" => Token::This,
+                        "true" => Token::True,
+                        "var" => Token::Var,
+                        "while" => Token::While,
+                        identifier => Token::Identifier(identifier),
+                    }
+                }
                 _ => {
                     return Err(LoxError::InvalidSyntax {
                         source_line: self
@@ -268,6 +296,7 @@ mod tests {
         let expected = vec![
             Token::And,
             Token::Class,
+            Token::Else,
             Token::False,
             Token::Fun,
             Token::For,
@@ -287,15 +316,17 @@ mod tests {
 
     #[test]
     fn identifiers() {
-        let source = "_ _test test_t test test_test";
+        let source = "_ _test test_T1 test test_TEST a1 _42";
         let scanner = Scanner::new(source);
         let actual = scanner.tokens().unwrap();
         let expected = vec![
             Token::Identifier("_"),
             Token::Identifier("_test"),
-            Token::Identifier("test_t"),
+            Token::Identifier("test_T1"),
             Token::Identifier("test"),
-            Token::Identifier("test_test"),
+            Token::Identifier("test_TEST"),
+            Token::Identifier("a1"),
+            Token::Identifier("_42"),
         ];
         assert_eq!(actual, expected);
     }
@@ -307,8 +338,8 @@ mod tests {
         let actual = scanner.tokens().unwrap();
         let expected = vec![
             Token::Identifier("andor"),
-            Token::Or,
             Token::And,
+            Token::Or,
             Token::Identifier("_and"),
             Token::Identifier("or_"),
             Token::Identifier("Or"),
