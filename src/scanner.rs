@@ -67,8 +67,8 @@ impl Scanner {
                     }
                 }
                 '/' => {
-                    let mut chars = source.clone().map(|t| t.1).peekable();
-                    if let Some('/') = chars.peek() {
+                    let mut lookahead = source.clone().map(|t| t.1).peekable();
+                    if let Some('/') = lookahead.peek() {
                         // Comment, consume the rest of the line.
                         for (i, c) in source.by_ref() {
                             if c == '\n' {
