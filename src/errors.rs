@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Clone, Debug)]
+#[derive(Error, Clone, Debug, PartialEq)]
 pub enum LoxError {
     #[error(
         "invalid syntax, line {line_number}\n{source_line}\n{:->column_number$}",
@@ -16,6 +16,15 @@ pub enum LoxError {
         "^"
     )]
     UnterminatedString {
+        source_line: String,
+        line_number: usize,
+        column_number: usize,
+    },
+    #[error(
+        "unterminated comment, line {line_number}\n{source_line}\n{:->column_number$}",
+        "^"
+    )]
+    UnterminatedComment {
         source_line: String,
         line_number: usize,
         column_number: usize,
