@@ -197,6 +197,7 @@ impl Scanner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
 
     #[test]
     fn single_and_double_lexemes() {
@@ -247,8 +248,84 @@ mod tests {
     }
 
     #[test]
+    fn ignore_c_style_comments() {
+        let source = "(/* this *should* be ignored */)";
+        let scanner = Scanner::new(source);
+        let actual = scanner.tokens().unwrap();
+        let expected = vec![Token::LeftParen, Token::RightParen];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn ignore_c_style_comments_multiline() {
+        let source = indoc! {r#"
+            var t1; /* this
+            should be
+            ignored */ var t2;"#
+        };
+        let scanner = Scanner::new(source);
+        let actual = scanner.tokens().unwrap();
+        let expected = vec![
+            Token::Var,
+            Token::Identifier("t1"),
+            Token::Semicolon,
+            Token::Var,
+            Token::Identifier("t2"),
+            Token::Semicolon,
+        ];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn line_counting_multiline_comments() {
+        let source = indoc! {r#"
+            var t1; /* this
+            should be
+            ignored */ var t2;@"#
+        };
+        let scanner = Scanner::new(source);
+        let actual = scanner.tokens();
+        let expected = Err(LoxError::InvalidSyntax {
+            source_line: "ignored */ var t2;@".to_string(),
+            line_number: 3,
+            column_number: 19,
+        });
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn line_counting_multiline_string() {
+        let source = indoc! {r#"
+            var t1 = "this is a
+            multi line
+            string"; var t2;@"#
+        };
+        let scanner = Scanner::new(source);
+        let actual = scanner.tokens();
+        let expected = Err(LoxError::InvalidSyntax {
+            source_line: r#"string"; var t2;@"#.to_string(),
+            line_number: 3,
+            column_number: 17,
+        });
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn string_literals() {
         let source = r#""string (123) // check""#;
+        let scanner = Scanner::new(source);
+        let actual = scanner.tokens().unwrap();
+        // Expect the source without surrounding double quotes
+        let expected = vec![Token::String(&source[1..source.len() - 1])];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn multiline_string_literals() {
+        let source = indoc! {r#""this is a
+            multi line
+            string.""#
+        };
         let scanner = Scanner::new(source);
         let actual = scanner.tokens().unwrap();
         // Expect the source without surrounding double quotes
