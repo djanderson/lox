@@ -5,8 +5,8 @@ use std::io::prelude::*;
 use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::{error::ErrorKind::ValueValidation, CommandFactory, Parser as ArgParser};
-use lox::scanner::Scanner;
 use lox::parser::Parser;
+use lox::scanner::Scanner;
 
 /// Lox interpreter from Crafting Interpreters
 #[derive(ArgParser, Debug)]
