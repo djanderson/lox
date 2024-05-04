@@ -29,6 +29,15 @@ pub enum LoxError {
         line_number: usize,
         column_number: usize,
     },
+    #[error(
+        "parse error, line {line_number}\n{source_line}\n{:->column_number$}",
+        "^"
+    )]
+    ParseError {
+        source_line: String,
+        line_number: usize,
+        column_number: usize,
+    },
 }
 
 #[cfg(test)]

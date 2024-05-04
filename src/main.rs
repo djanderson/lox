@@ -4,11 +4,12 @@ use std::io::prelude::*;
 
 use anyhow::Result;
 use camino::Utf8PathBuf;
-use clap::{error::ErrorKind::ValueValidation, CommandFactory, Parser};
+use clap::{error::ErrorKind::ValueValidation, CommandFactory, Parser as ArgParser};
 use lox::scanner::Scanner;
+use lox::parser::Parser;
 
 /// Lox interpreter from Crafting Interpreters
-#[derive(Parser, Debug)]
+#[derive(ArgParser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     /// Lox file to interpret
@@ -46,19 +47,23 @@ fn run_repl() -> Result<()> {
             continue;
         }
         let result = run(line);
-        match result {
-            Ok(_) => println!(" => TODO"),
-            Err(e) => eprintln!("{e}"),
+        if let Err(e) = result {
+            eprintln!("{e}");
         }
+        // match result {
+        //     Ok(_) => println!(" => TODO"),
+        //     Err(e) => ,
+        // }
     }
     Ok(())
 }
 
 fn run(input: String) -> Result<()> {
     let scanner = Scanner::new(input);
-    for token in scanner.tokens()? {
-        println!("{token:#?}");
-    }
+    let tokens = scanner.tokens()?;
+    let mut parser = Parser::new(&tokens);
+    let ast = parser.parse()?;
+    println!("{}", ast);
     Ok(())
 }
 
