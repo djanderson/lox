@@ -7,9 +7,9 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    pub fn new(source: impl ToString) -> Self {
+    pub fn new(source: impl Into<String>) -> Self {
         Self {
-            source: source.to_string(),
+            source: source.into(),
         }
     }
 
@@ -175,7 +175,7 @@ impl Scanner {
                     if length > 1 {
                         source.nth(length - 2); // advance source past number
                     }
-                    Token::Number(number[..length].parse().expect("valid f32"))
+                    Token::Number(&number[..length])
                 }
                 c if c == '_' || c.is_ascii_alphabetic() => {
                     // Reserved words and identifiers.
@@ -273,9 +273,9 @@ mod tests {
         let actual = scanner.tokens().unwrap();
         let expected = vec![
             Token::LeftParen,
-            Token::Number(1.0),
+            Token::Number("1"),
             Token::EqualEqual,
-            Token::Number(1.0),
+            Token::Number("1.0"),
             Token::RightParen,
         ];
         assert_eq!(actual, expected);
@@ -372,13 +372,13 @@ mod tests {
         let scanner = Scanner::new("1 2.0 0.3 000.3 0.0003 123 123.123");
         let actual = scanner.tokens().unwrap();
         let expected = vec![
-            Token::Number(1.0),
-            Token::Number(2.0),
-            Token::Number(0.3),
-            Token::Number(0.3),
-            Token::Number(0.0003),
-            Token::Number(123.0),
-            Token::Number(123.123),
+            Token::Number("1"),
+            Token::Number("2.0"),
+            Token::Number("0.3"),
+            Token::Number("000.3"),
+            Token::Number("0.0003"),
+            Token::Number("123"),
+            Token::Number("123.123"),
         ];
         assert_eq!(actual, expected);
     }
@@ -389,11 +389,11 @@ mod tests {
         let actual = scanner.tokens().unwrap();
         let expected = vec![
             Token::Dot,
-            Token::Number(123.0),
-            Token::Number(123.0),
+            Token::Number("123"),
+            Token::Number("123"),
             Token::Dot,
             Token::Minus,
-            Token::Number(123.0),
+            Token::Number("123"),
         ];
         assert_eq!(actual, expected);
     }

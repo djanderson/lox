@@ -26,7 +26,7 @@ pub enum Token<'a> {
     // Literals.
     Identifier(&'a str),
     String(&'a str),
-    Number(f64),
+    Number(&'a str),
     // Keywords.
     And,
     Class,
