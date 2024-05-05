@@ -1,12 +1,10 @@
-use thiserror::Error;
-
-#[derive(Error, Clone, Debug, PartialEq)]
-pub enum LoxError {
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum Error {
     #[error(
-        "invalid syntax, line {line_number}\n{source_line}\n{:->column_number$}",
+        "invalid character, line {line_number}\n{source_line}\n{:->column_number$}",
         "^"
     )]
-    InvalidSyntax {
+    InvalidCharacter {
         source_line: String,
         line_number: usize,
         column_number: usize,
@@ -46,16 +44,16 @@ mod test {
     use indoc::indoc;
 
     #[test]
-    fn invalid_syntax() {
+    fn invalid_character() {
         let source_line = String::from("class @bad");
-        let e = LoxError::InvalidSyntax {
+        let e = Error::InvalidCharacter {
             source_line,
             line_number: 1,
             column_number: 7,
         };
         let actual = format!("{e}");
         let expected = indoc! {r#"
-            invalid syntax, line 1
+            invalid character, line 1
             class @bad
             ------^"#
         };

@@ -1,4 +1,4 @@
-use crate::errors::LoxError;
+use crate::error::Error;
 use crate::token::Token;
 
 #[derive(Debug)]
@@ -14,7 +14,7 @@ impl Scanner {
     }
 
     /// Walk the source and tokenize.
-    pub fn tokens(&self) -> Result<Vec<Token<'_>>, LoxError> {
+    pub fn tokens(&self) -> Result<Vec<Token<'_>>, Error> {
         let mut tokens = Vec::new();
         let mut line = 0;
         let mut last_newline_position = 0;
@@ -87,7 +87,7 @@ impl Scanner {
                         let mut length = 1;
                         loop {
                             let Some(p) = lookahead.position(|c| c == '*') else {
-                                return Err(LoxError::UnterminatedComment {
+                                return Err(Error::UnterminatedComment {
                                     source_line: self
                                         .source
                                         .lines()
@@ -134,7 +134,7 @@ impl Scanner {
                     let mut lookahead = source.clone().map(|t| t.1).peekable();
                     loop {
                         let Some(p) = lookahead.position(|c| c == '\n' || c == '"') else {
-                            return Err(LoxError::UnterminatedString {
+                            return Err(Error::UnterminatedString {
                                 source_line: self
                                     .source
                                     .lines()
@@ -209,7 +209,7 @@ impl Scanner {
                     }
                 }
                 _ => {
-                    return Err(LoxError::InvalidSyntax {
+                    return Err(Error::InvalidCharacter {
                         source_line: self
                             .source
                             .lines()
@@ -319,7 +319,7 @@ mod tests {
         };
         let scanner = Scanner::new(source);
         let actual = scanner.tokens();
-        let expected = Err(LoxError::InvalidSyntax {
+        let expected = Err(Error::InvalidCharacter {
             source_line: "ignored */ var t2;@".to_string(),
             line_number: 3,
             column_number: 19,
@@ -336,7 +336,7 @@ mod tests {
         };
         let scanner = Scanner::new(source);
         let actual = scanner.tokens();
-        let expected = Err(LoxError::InvalidSyntax {
+        let expected = Err(Error::InvalidCharacter {
             source_line: r#"string"; var t2;@"#.to_string(),
             line_number: 3,
             column_number: 17,

@@ -1,4 +1,4 @@
-use crate::errors::LoxError;
+use crate::error::Error;
 use std::iter::Peekable;
 use std::slice::Iter;
 
@@ -17,17 +17,17 @@ impl<'tok> Parser<'tok> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    pub fn parse(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         self.expression()
     }
 
     /// expression -> equality ;
-    fn expression(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    fn expression(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         self.equality()
     }
 
     /// equality -> comparison ( ( "!=" | "==" ) comparison )* ;
-    fn equality(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    fn equality(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         let mut expr = self.comparison()?;
 
         while let Some(Token::BangEqual | Token::EqualEqual) = self.tokens.peek() {
@@ -44,7 +44,7 @@ impl<'tok> Parser<'tok> {
     }
 
     /// comparison -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-    fn comparison(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    fn comparison(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         let mut expr = self.term()?;
 
         while let Some(Token::Greater | Token::GreaterEqual | Token::Less | Token::LessEqual) =
@@ -63,7 +63,7 @@ impl<'tok> Parser<'tok> {
     }
 
     /// term -> factor ( ( "- | "+" ) factor )* ;
-    fn term(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    fn term(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         let mut expr = self.factor()?;
 
         while let Some(Token::Minus | Token::Plus) = self.tokens.peek() {
@@ -80,7 +80,7 @@ impl<'tok> Parser<'tok> {
     }
 
     /// factor -> unary ( ( "/" | "*" ) unary )* ;
-    fn factor(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    fn factor(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         let mut expr = self.unary()?;
 
         while let Some(Token::Slash | Token::Star) = self.tokens.peek() {
@@ -98,7 +98,7 @@ impl<'tok> Parser<'tok> {
 
     /// unary -> ( "!" | "-" ) unary
     ///        | primary ;
-    fn unary(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    fn unary(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         let expr = match self.tokens.peek() {
             Some(Token::Bang | Token::Minus) => {
                 let operator = self.tokens.next().unwrap();
@@ -112,7 +112,7 @@ impl<'tok> Parser<'tok> {
 
     /// primary -> NUMBER | STRING | "true" | "false" | "nil"
     ///          | "(" expression ")" ;
-    fn primary(&mut self) -> Result<Box<Expr<'tok>>, LoxError> {
+    fn primary(&mut self) -> Result<Box<Expr<'tok>>, Error> {
         match self.tokens.peek() {
             Some(Token::True | Token::False | Token::Nil | Token::Number(_) | Token::String(_)) => {
                 Ok(Box::new(Expr::Literal {
@@ -125,14 +125,14 @@ impl<'tok> Parser<'tok> {
                 if let Some(Token::RightParen) = self.tokens.next() {
                     Ok(Box::new(Expr::Grouping { expression }))
                 } else {
-                    Err(LoxError::ParseError {
+                    Err(Error::ParseError {
                         source_line: "FIXME".to_string(),
                         line_number: 1,
                         column_number: 1,
                     })
                 }
             }
-            _ => Err(LoxError::ParseError {
+            _ => Err(Error::ParseError {
                 source_line: "FIXME 2".to_string(),
                 line_number: 1,
                 column_number: 1,
