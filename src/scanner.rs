@@ -1,28 +1,23 @@
 use crate::error::Error;
+use crate::iter::PeekableLineColIterator;
 use crate::token::Token;
 
 #[derive(Debug)]
-pub struct Scanner {
-    pub source: String,
+pub struct Scanner<'a> {
+    pub source: &'a str,
 }
 
-impl Scanner {
-    pub fn new(source: impl Into<String>) -> Self {
-        Self {
-            source: source.into(),
-        }
+impl<'a> Scanner<'a> {
+    pub fn new(source: &'a str) -> Self {
+        Self { source }
     }
 
     /// Walk the source and tokenize.
     pub fn tokens(&self) -> Result<Vec<Token<'_>>, Error> {
         let mut tokens = Vec::new();
-        let mut line = 0;
-        let mut last_newline_position = 0;
-        let mut column;
-        let mut source = self.source.chars().enumerate().peekable();
+        let mut scanner = PeekableLineColIterator::new(self.source.chars());
 
-        while let Some((index, c)) = source.next() {
-            column = (index - last_newline_position) + 1;
+        while let Some(c) = scanner.next() {
             let token = match c {
                 '(' => Token::LeftParen,
                 ')' => Token::RightParen,
@@ -35,45 +30,43 @@ impl Scanner {
                 ';' => Token::Semicolon,
                 '*' => Token::Star,
                 '!' => {
-                    if let Some('=') = source.peek().map(|t| t.1) {
-                        source.next();
+                    if let Some('=') = scanner.peek() {
+                        scanner.next();
                         Token::BangEqual
                     } else {
                         Token::Bang
                     }
                 }
                 '=' => {
-                    if let Some('=') = source.peek().map(|t| t.1) {
-                        source.next();
+                    if let Some('=') = scanner.peek() {
+                        scanner.next();
                         Token::EqualEqual
                     } else {
                         Token::Equal
                     }
                 }
                 '<' => {
-                    if let Some('=') = source.peek().map(|t| t.1) {
-                        source.next();
+                    if let Some('=') = scanner.peek() {
+                        scanner.next();
                         Token::LessEqual
                     } else {
                         Token::Less
                     }
                 }
                 '>' => {
-                    if let Some('=') = source.peek().map(|t| t.1) {
-                        source.next();
+                    if let Some('=') = scanner.peek() {
+                        scanner.next();
                         Token::GreaterEqual
                     } else {
                         Token::Greater
                     }
                 }
                 '/' => {
-                    let mut lookahead = source.clone().map(|t| t.1).peekable();
+                    let mut lookahead = scanner.clone();
                     if let Some('/') = lookahead.peek() {
                         // C++ style comment, consume the rest of the line.
-                        for (i, c) in source.by_ref() {
+                        for c in scanner.by_ref() {
                             if c == '\n' {
-                                line += 1;
-                                last_newline_position = i + 1;
                                 break;
                             }
                         }
@@ -82,87 +75,64 @@ impl Scanner {
                         /* C-style comment, consume until its end. */
                         // Track where the comment starts.
                         lookahead.next();
-                        let start_line = line;
-                        let start_column = column;
+                        let start_line = scanner.line();
+                        let start_column = scanner.column();
                         let mut length = 1;
                         loop {
-                            let Some(p) = lookahead.position(|c| c == '*') else {
-                                return Err(Error::UnterminatedComment {
+                            let Some(pos) = lookahead.position(|c| c == '*') else {
+                                return Err(Error::UnterminatedMultilineComment {
                                     source_line: self
                                         .source
                                         .lines()
-                                        .nth(start_line)
+                                        .nth(start_line - 1)
                                         .expect("currrent line must be in source")
                                         .to_string(),
-                                    line_number: start_line + 1,
+                                    line_number: start_line,
                                     column_number: start_column,
                                 });
                             };
-                            length += p + 1;
+                            length += pos + 1;
                             if lookahead.peek().is_some_and(|c| *c == '/') {
-                                length += 1;
                                 break;
                             }
                         }
-                        // Advance source past the comment and record last newline.
-                        for (i, c) in source.by_ref().take(length) {
-                            if c == '\n' {
-                                line += 1;
-                                last_newline_position = i + 1;
-                            }
-                        }
+                        scanner.nth(length);
                         continue;
                     } else {
                         Token::Slash
                     }
                 }
-                ' ' | '\r' | '\t' => {
-                    continue;
-                }
-                '\n' => {
-                    line += 1;
-                    last_newline_position = index + 1;
+                ' ' | '\n' | '\t' | '\r' => {
                     continue;
                 }
                 '"' => {
                     // String literal.
                     // Track where the string starts.
-                    let start_line = line;
-                    let start_column = column;
-                    let string = &self.source[index + 1..];
-                    let mut length = 0;
-                    let mut lookahead = source.clone().map(|t| t.1).peekable();
-                    loop {
-                        let Some(p) = lookahead.position(|c| c == '\n' || c == '"') else {
-                            return Err(Error::UnterminatedString {
-                                source_line: self
-                                    .source
-                                    .lines()
-                                    .nth(start_line)
-                                    .expect("currrent line must be in source")
-                                    .to_string(),
-                                line_number: start_line + 1,
-                                column_number: start_column,
-                            });
-                        };
-                        length += p + 1;
-                        if &string[length - 1..length] == "\n" {
-                            line += 1;
-                            last_newline_position = index + 1 + length;
-                        } else {
-                            // At closing quote, string ends one character back.
-                            length -= 1;
-                            break;
-                        }
-                    }
-                    source.nth(length); // advance source past closing quote
+                    let start_line = scanner.line();
+                    let start_column = scanner.column();
+                    let string = &self.source[scanner.offset()..];
+                    let mut lookahead = scanner.clone();
+                    let Some(pos) = lookahead.position(|c| c == '"') else {
+                        return Err(Error::UnterminatedString {
+                            source_line: self
+                                .source
+                                .lines()
+                                .nth(start_line - 1)
+                                .expect("currrent line must be in source")
+                                .to_string(),
+                            line_number: start_line,
+                            column_number: start_column,
+                        });
+                    };
+                    let length = pos;
+                    scanner.nth(length); // advance source past closing quote
                     Token::String(&string[..length])
                 }
                 '0'..='9' => {
                     // Number literal.
-                    let number = &self.source[index..];
+                    let number = &self.source[scanner.offset() - 1..];
                     let mut length = 1;
-                    let mut lookahead = source.clone().map(|t| t.1).peekable();
+                    let mut lookahead = scanner.clone();
                     while lookahead.peek().is_some_and(|c| c.is_ascii_digit()) {
                         lookahead.next();
                         length += 1;
@@ -173,20 +143,20 @@ impl Scanner {
                         length += lookahead.take_while(|c| c.is_ascii_digit()).count() + 1;
                     }
                     if length > 1 {
-                        source.nth(length - 2); // advance source past number
+                        scanner.nth(length - 2); // advance source past number
                     }
                     Token::Number(&number[..length])
                 }
                 c if c == '_' || c.is_ascii_alphabetic() => {
                     // Reserved words and identifiers.
-                    let symbol = &self.source[index..];
+                    let symbol = &self.source[scanner.offset() - 1..];
                     let mut length = 1;
-                    let lookahead = source.clone().map(|t| t.1).peekable();
+                    let lookahead = scanner.clone();
                     length += lookahead
                         .take_while(|c| *c == '_' || c.is_ascii_alphanumeric())
                         .count();
                     if length > 1 {
-                        source.nth(length - 2); // advance source past symbol
+                        scanner.nth(length - 2); // advance source past symbol
                     }
                     match &symbol[..length] {
                         "and" => Token::And,
@@ -213,11 +183,11 @@ impl Scanner {
                         source_line: self
                             .source
                             .lines()
-                            .nth(line)
+                            .nth(scanner.line() - 1)
                             .expect("currrent line must be in source")
                             .to_string(),
-                        line_number: line + 1,
-                        column_number: column,
+                        line_number: scanner.line(),
+                        column_number: scanner.column(),
                     })
                 }
             };
