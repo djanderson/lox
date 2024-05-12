@@ -59,7 +59,7 @@ fn run_repl() -> Result<()> {
 }
 
 fn run(input: String) -> Result<()> {
-    let scanner = Scanner::new(input);
+    let scanner = Scanner::new(&input);
     let tokens = scanner.tokens()?;
     let mut parser = Parser::new(&tokens);
     let ast = parser.parse()?;
