@@ -125,7 +125,7 @@ impl<'tok> Parser<'tok> {
                 if let Some(Token::RightParen) = self.tokens.next() {
                     Ok(Box::new(Expr::Grouping { expression }))
                 } else {
-                    Err(Error::ParseError {
+                    Err(Error::UnclosedParenthesis {
                         source_line: "FIXME".to_string(),
                         line_number: 1,
                         column_number: 1,
