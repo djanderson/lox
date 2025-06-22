@@ -85,7 +85,7 @@ impl<'a> Scanner<'a> {
                                         .source
                                         .lines()
                                         .nth(start_line - 1)
-                                        .expect("currrent line must be in source")
+                                        .expect("current line must be in source")
                                         .to_string(),
                                     line_number: start_line,
                                     column_number: start_column,
@@ -118,7 +118,7 @@ impl<'a> Scanner<'a> {
                                 .source
                                 .lines()
                                 .nth(start_line - 1)
-                                .expect("currrent line must be in source")
+                                .expect("current line must be in source")
                                 .to_string(),
                             line_number: start_line,
                             column_number: start_column,
@@ -184,11 +184,11 @@ impl<'a> Scanner<'a> {
                             .source
                             .lines()
                             .nth(scanner.line() - 1)
-                            .expect("currrent line must be in source")
+                            .expect("current line must be in source")
                             .to_string(),
                         line_number: scanner.line(),
                         column_number: scanner.column(),
-                    })
+                    });
                 }
             };
             tokens.push(token);
