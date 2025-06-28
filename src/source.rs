@@ -1,7 +1,37 @@
-//! Peekable line and column number tracking iterator.
-//!
-//! Inspired by https://github.com/serde-rs/json/blob/master/src/iter.rs.
+#[derive(Debug, Clone)]
+pub struct Source {
+    buf: Box<str>,
+}
 
+impl Source {
+    pub fn new(buf: Box<str>) -> Self {
+        Self { buf }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.buf
+    }
+
+    pub fn span_to_lexeme(&self, span: &Span) -> Option<&str> {
+        self.buf.get((span.start as usize)..(span.end as usize))
+    }
+}
+
+impl From<&str> for Source {
+    fn from(value: &str) -> Self {
+        Self::new(Box::from(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Span {
+    pub start: u32,
+    pub end: u32,
+}
+
+/// Peekable line and column number tracking iterator.
+///
+/// Inspired by https://github.com/serde-rs/json/blob/master/src/iter.rs.
 #[derive(Debug, Clone)]
 pub struct PeekableLineColIterator<I>
 where

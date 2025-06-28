@@ -1,205 +1,243 @@
-use crate::error::Error;
-use crate::iter::PeekableLineColIterator;
+use std::str::Chars;
+
+use crate::source::PeekableLineColIterator;
 use crate::token::Token;
 
 #[derive(Debug)]
 pub struct Scanner<'a> {
-    pub source: &'a str,
+    source: &'a str,
+    chars: PeekableLineColIterator<Chars<'a>>,
 }
+
+/// The maximum number of scan errors to allow before giving up.
+const MAX_SCAN_ERRORS: u32 = 100;
 
 impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source }
+        Self {
+            source,
+            chars: PeekableLineColIterator::new(source.chars()),
+        }
     }
 
     /// Walk the source and tokenize.
-    pub fn tokens(&self) -> Result<Vec<Token<'_>>, Error> {
-        let mut tokens = Vec::new();
-        let mut scanner = PeekableLineColIterator::new(self.source.chars());
+    pub fn tokens(self) -> Vec<Token> {
+        self.scan(0, |n_errors, token| {
+            if token.is_invalid() {
+                *n_errors += 1
+            }
 
-        while let Some(c) = scanner.next() {
-            let token = match c {
-                '(' => Token::LeftParen,
-                ')' => Token::RightParen,
-                '{' => Token::LeftBrace,
-                '}' => Token::RightBrace,
-                ',' => Token::Comma,
-                '.' => Token::Dot,
-                '-' => Token::Minus,
-                '+' => Token::Plus,
-                ';' => Token::Semicolon,
-                '*' => Token::Star,
-                '!' => {
-                    if let Some('=') = scanner.peek() {
-                        scanner.next();
-                        Token::BangEqual
-                    } else {
-                        Token::Bang
-                    }
+            if *n_errors <= MAX_SCAN_ERRORS {
+                Some(token)
+            } else {
+                None
+            }
+        })
+        .collect()
+    }
+}
+
+impl<'a> Iterator for Scanner<'a> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let c = self
+            .chars
+            .by_ref()
+            .skip_while(|c| c.is_whitespace())
+            .next()?;
+        let pos = self.chars.offset() - 1;
+        let src = &self.source[pos..];
+
+        let token = match c {
+            '(' => Token::new_left_paren(pos),
+            ')' => Token::new_right_paren(pos),
+            '{' => Token::new_left_brace(pos),
+            '}' => Token::new_right_brace(pos),
+            ',' => Token::new_comma(pos),
+            '.' => Token::new_dot(pos),
+            '-' => Token::new_minus(pos),
+            '+' => Token::new_plus(pos),
+            ';' => Token::new_semicolon(pos),
+            '*' => Token::new_star(pos),
+            '!' => {
+                if let Some('=') = self.chars.peek() {
+                    self.chars.next();
+                    Token::new_bang_equal(pos)
+                } else {
+                    Token::new_bang(pos)
                 }
-                '=' => {
-                    if let Some('=') = scanner.peek() {
-                        scanner.next();
-                        Token::EqualEqual
-                    } else {
-                        Token::Equal
-                    }
+            }
+            '=' => {
+                if let Some('=') = self.chars.peek() {
+                    self.chars.next();
+                    Token::new_equal_equal(pos)
+                } else {
+                    Token::new_equal(pos)
                 }
-                '<' => {
-                    if let Some('=') = scanner.peek() {
-                        scanner.next();
-                        Token::LessEqual
-                    } else {
-                        Token::Less
-                    }
+            }
+            '<' => {
+                if let Some('=') = self.chars.peek() {
+                    self.chars.next();
+                    Token::new_less_equal(pos)
+                } else {
+                    Token::new_less(pos)
                 }
-                '>' => {
-                    if let Some('=') = scanner.peek() {
-                        scanner.next();
-                        Token::GreaterEqual
-                    } else {
-                        Token::Greater
-                    }
+            }
+            '>' => {
+                if let Some('=') = self.chars.peek() {
+                    self.chars.next();
+                    Token::new_greater_equal(pos)
+                } else {
+                    Token::new_equal(pos)
                 }
-                '/' => {
-                    let mut lookahead = scanner.clone();
-                    if let Some('/') = lookahead.peek() {
-                        // C++ style comment, consume the rest of the line.
-                        for c in scanner.by_ref() {
-                            if c == '\n' {
-                                break;
-                            }
-                        }
-                        continue;
-                    } else if let Some('*') = lookahead.peek() {
-                        /* C-style comment, consume until its end. */
-                        // Track where the comment starts.
-                        lookahead.next();
-                        let start_line = scanner.line();
-                        let start_column = scanner.column();
-                        let mut length = 1;
+            }
+            '/' => {
+                match self.chars.peek() {
+                    Some('/') => {
+                        // Line comment, consume to the end of the line.
+
+                        let len = if let Some(line_len) = src.find('\n') {
+                            self.chars.nth(line_len);
+                            line_len
+                        } else {
+                            // Line must end the file. Count remaining chars,
+                            // accounting for leading `/`.
+                            self.chars.by_ref().count() + 1
+                        };
+
+                        Token::new_line_comment(pos, &src[..len])
+                    }
+                    Some('*') => {
+                        // Block comment, consume until its end.
+
+                        let mut len = 2;
+
+                        // C-style comments can be nested, like `/* /* comment */ */`
+                        let mut depth = 1;
+
                         loop {
-                            let Some(pos) = lookahead.position(|c| c == '*') else {
-                                return Err(Error::UnterminatedMultilineComment {
-                                    source_line: self
-                                        .source
-                                        .lines()
-                                        .nth(start_line - 1)
-                                        .expect("current line must be in source")
-                                        .to_string(),
-                                    line_number: start_line,
-                                    column_number: start_column,
-                                });
+                            let next_pos = src[len..].find(&['/', '*']);
+
+                            // Ensure some block comment character was found and
+                            // enough source remains to look for the second.
+                            if next_pos.is_none_or(|pos| src[(len + pos)..].len() < 2) {
+                                self.chars.by_ref().count(); // drain scanner
+                                return Some(Token::new_unterminated_block_comment(pos, src));
                             };
-                            length += pos + 1;
-                            if lookahead.peek().is_some_and(|c| *c == '/') {
-                                break;
+
+                            len += next_pos.unwrap() + 1;
+
+                            match &src[(len - 1)..(len + 1)] {
+                                "/*" => {
+                                    len += 1;
+                                    depth += 1;
+                                }
+                                "*/" => {
+                                    len += 1;
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        break;
+                                    }
+                                }
+                                _ => continue,
                             }
                         }
-                        scanner.nth(length);
-                        continue;
-                    } else {
-                        Token::Slash
-                    }
-                }
-                ' ' | '\n' | '\t' | '\r' => {
-                    continue;
-                }
-                '"' => {
-                    // String literal.
-                    // Track where the string starts.
-                    let start_line = scanner.line();
-                    let start_column = scanner.column();
-                    let string = &self.source[scanner.offset()..];
-                    let mut lookahead = scanner.clone();
-                    let Some(pos) = lookahead.position(|c| c == '"') else {
-                        return Err(Error::UnterminatedString {
-                            source_line: self
-                                .source
-                                .lines()
-                                .nth(start_line - 1)
-                                .expect("current line must be in source")
-                                .to_string(),
-                            line_number: start_line,
-                            column_number: start_column,
-                        });
-                    };
-                    let length = pos;
-                    scanner.nth(length); // advance source past closing quote
-                    Token::String(&string[..length])
-                }
-                '0'..='9' => {
-                    // Number literal.
-                    let number = &self.source[scanner.offset() - 1..];
-                    let mut length = 1;
-                    let mut lookahead = scanner.clone();
-                    while lookahead.peek().is_some_and(|c| c.is_ascii_digit()) {
-                        lookahead.next();
-                        length += 1;
-                    }
-                    if lookahead.next().is_some_and(|c| c == '.')
-                        && lookahead.peek().is_some_and(|c| c.is_ascii_digit())
-                    {
-                        length += lookahead.take_while(|c| c.is_ascii_digit()).count() + 1;
-                    }
-                    if length > 1 {
-                        scanner.nth(length - 2); // advance source past number
-                    }
-                    Token::Number(&number[..length])
-                }
-                c if c == '_' || c.is_ascii_alphabetic() => {
-                    // Reserved words and identifiers.
-                    let symbol = &self.source[scanner.offset() - 1..];
-                    let mut length = 1;
-                    let lookahead = scanner.clone();
-                    length += lookahead
-                        .take_while(|c| *c == '_' || c.is_ascii_alphanumeric())
-                        .count();
-                    if length > 1 {
-                        scanner.nth(length - 2); // advance source past symbol
-                    }
-                    match &symbol[..length] {
-                        "and" => Token::And,
-                        "class" => Token::Class,
-                        "else" => Token::Else,
-                        "false" => Token::False,
-                        "fun" => Token::Fun,
-                        "for" => Token::For,
-                        "if" => Token::If,
-                        "nil" => Token::Nil,
-                        "or" => Token::Or,
-                        "print" => Token::Print,
-                        "return" => Token::Return,
-                        "super" => Token::Super,
-                        "this" => Token::This,
-                        "true" => Token::True,
-                        "var" => Token::Var,
-                        "while" => Token::While,
-                        identifier => Token::Identifier(identifier),
-                    }
-                }
-                _ => {
-                    return Err(Error::InvalidCharacter {
-                        source_line: self
-                            .source
-                            .lines()
-                            .nth(scanner.line() - 1)
-                            .expect("current line must be in source")
-                            .to_string(),
-                        line_number: scanner.line(),
-                        column_number: scanner.column(),
-                    });
-                }
-            };
-            tokens.push(token);
-        }
 
-        Ok(tokens)
+                        // Move scanner past comment. Account for start len 2.
+                        self.chars.nth(len - 2);
+
+                        Token::new_block_comment(pos, &src[..len])
+                    }
+                    _ => Token::new_slash(pos),
+                }
+            }
+            '"' => {
+                // String literal.
+
+                let mut len = 1;
+
+                loop {
+                    let Some(quote_pos) = src[len..].find('"') else {
+                        self.chars.by_ref().count(); // drain scanner
+                        return Some(Token::new_unterminated_string(pos, &src));
+                    };
+
+                    len += quote_pos + 1;
+                    self.chars.nth(quote_pos + 1); // move scanner past this quote
+
+                    // If quote was escaped, keep parsing, otherwise done. The
+                    // position of the final quote is `len - 1`. Look for
+                    // escaping `\` just before that.
+                    if src.as_bytes()[len - 2] != b'\\' {
+                        break;
+                    }
+                }
+
+                Token::new_string(pos, &src[..len])
+            }
+            '0'..='9' => {
+                // Number literal.
+
+                let mut len = 1;
+                let mut lookahead = self.chars.clone();
+
+                while lookahead.peek().is_some_and(|c| c.is_ascii_digit()) {
+                    lookahead.next();
+                    len += 1;
+                }
+
+                if lookahead.next().is_some_and(|c| c == '.')
+                    && lookahead.peek().is_some_and(|c| c.is_ascii_digit())
+                {
+                    len += lookahead.take_while(|c| c.is_ascii_digit()).count() + 1;
+                }
+
+                if len > 1 {
+                    self.chars.nth((len as usize) - 2); // advance scanner past number
+                }
+
+                Token::new_number(pos, &src[..len])
+            }
+            c if c == '_' || c.is_ascii_alphabetic() => {
+                // Reserved words and identifiers.
+                let mut len = 1;
+                let lookahead = self.chars.clone();
+
+                len += lookahead
+                    .take_while(|c| *c == '_' || c.is_ascii_alphanumeric())
+                    .count();
+                if len > 1 {
+                    self.chars.nth(len - 2); // advance source past symbol
+                }
+
+                let lexeme = &src[..len];
+                match lexeme {
+                    "and" | "class" | "else" | "false" | "fun" | "for" | "if" | "nil" | "or"
+                    | "print" | "return" | "super" | "this" | "true" | "var" | "while" => {
+                        Token::new_keyword(pos, lexeme)
+                    }
+                    _ => Token::new_identifier(pos, lexeme),
+                }
+            }
+            _ => {
+                let token = Token::new_invalid_character(pos, &src[..1]);
+
+                // Consume to the end of the line and keep lexin'.
+                self.chars.by_ref().take_while(|c| *c != '\n').count();
+
+                token
+            }
+        };
+
+        Some(token)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::token::TokenKind;
+
     use super::*;
     use indoc::indoc;
 
@@ -207,120 +245,123 @@ mod tests {
     fn single_and_double_lexemes() {
         let source = "!=<=>===({,.-=;*})";
         let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
+        let actual: Vec<_> = scanner.tokens().iter().map(|tok| tok.kind()).collect();
         let expected = vec![
-            Token::BangEqual,
-            Token::LessEqual,
-            Token::GreaterEqual,
-            Token::EqualEqual,
-            Token::LeftParen,
-            Token::LeftBrace,
-            Token::Comma,
-            Token::Dot,
-            Token::Minus,
-            Token::Equal,
-            Token::Semicolon,
-            Token::Star,
-            Token::RightBrace,
-            Token::RightParen,
+            TokenKind::BangEqual,
+            TokenKind::LessEqual,
+            TokenKind::GreaterEqual,
+            TokenKind::EqualEqual,
+            TokenKind::LeftParen,
+            TokenKind::LeftBrace,
+            TokenKind::Comma,
+            TokenKind::Dot,
+            TokenKind::Minus,
+            TokenKind::Equal,
+            TokenKind::Semicolon,
+            TokenKind::Star,
+            TokenKind::RightBrace,
+            TokenKind::RightParen,
         ];
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn ignore_comment_line() {
+    fn line_comment_eof() {
         let source = "// this is a comment line";
-        let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        let expected = Vec::new();
+        let mut scanner = Scanner::new(source);
+        let actual = scanner.next().expect("comment should be a token");
+        let expected = Token::new_line_comment(0, source);
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn ignore_comment_eol() {
-        let source = "(1 == 1.0) // this is an end-of-line comment";
+    fn line_comment_eol() {
+        let source = "var a = 1; // eol comment";
         let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
+        let actual = scanner.last().unwrap();
+        let expected = Token::new_line_comment(11, &source[11..]);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn line_comment_ends_at_eol() {
+        let source = indoc! {
+            r#"// eol comment
+            "#
+        };
+        let scanner = Scanner::new(source);
+        let actual = scanner.tokens();
+        let expected = vec![Token::new_line_comment(0, "// eol comment")];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn block_comment() {
+        let source = "(/* a *block* comment */)";
+        let scanner = Scanner::new(source);
+        let actual = scanner.tokens();
         let expected = vec![
-            Token::LeftParen,
-            Token::Number("1"),
-            Token::EqualEqual,
-            Token::Number("1.0"),
-            Token::RightParen,
+            Token::new_left_paren(0),
+            Token::new_block_comment(1, "/* a *block* comment */"),
+            Token::new_right_paren(24),
         ];
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn ignore_c_style_comments() {
-        let source = "(/* this *should* be ignored */)";
-        let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        let expected = vec![Token::LeftParen, Token::RightParen];
+    fn unterminated_block_comment() {
+        let source = "/* comment *";
+        let mut scanner = Scanner::new(source);
+        let actual = scanner.next().unwrap();
+        let expected = Token::new_unterminated_block_comment(0, source);
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn ignore_c_style_comments_multiline() {
-        let source = indoc! {r#"
-            var t1; /* this
-            should be
-            ignored */ var t2;"#
-        };
-        let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        let expected = vec![
-            Token::Var,
-            Token::Identifier("t1"),
-            Token::Semicolon,
-            Token::Var,
-            Token::Identifier("t2"),
-            Token::Semicolon,
-        ];
+    fn nested_block_comment() {
+        let source = "/* a /* nested /**block**/*/ /**/** comment */";
+        let mut scanner = Scanner::new(source);
+        let actual = scanner.next().unwrap();
+        let expected = Token::new_block_comment(0, source);
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn line_counting_multiline_comments() {
+    fn multiline_block_comment() {
         let source = indoc! {r#"
-            var t1; /* this
-            should be
-            ignored */ var t2;@"#
+            var t1; /* multiline
+            block
+            comment */ var t2;"#
         };
         let scanner = Scanner::new(source);
-        let actual = scanner.tokens();
-        let expected = Err(Error::InvalidCharacter {
-            source_line: "ignored */ var t2;@".to_string(),
-            line_number: 3,
-            column_number: 19,
-        });
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn line_counting_multiline_string() {
-        let source = indoc! {r#"
-            var t1 = "this is a
-            multi line
-            string"; var t2;@"#
-        };
-        let scanner = Scanner::new(source);
-        let actual = scanner.tokens();
-        let expected = Err(Error::InvalidCharacter {
-            source_line: r#"string"; var t2;@"#.to_string(),
-            line_number: 3,
-            column_number: 17,
-        });
+        let tokens = scanner.tokens();
+        assert_eq!(tokens.len(), 7);
+        let actual = &tokens[3];
+        let expected = &Token::new_block_comment(
+            8,
+            indoc! {r#"/* multiline
+            block
+            comment */"#
+            },
+        );
         assert_eq!(actual, expected);
     }
 
     #[test]
     fn string_literals() {
         let source = r#""string (123) // check""#;
-        let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        // Expect the source without surrounding double quotes
-        let expected = vec![Token::String(&source[1..source.len() - 1])];
+        let mut scanner = Scanner::new(source);
+        let actual = scanner.next().unwrap();
+        let expected = Token::new_string(0, source);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn string_literals_escaped() {
+        let source = r#""string \"123\" // check""#;
+        let mut scanner = Scanner::new(source);
+        let actual = scanner.next().unwrap();
+        let expected = Token::new_string(0, source);
         assert_eq!(actual, expected);
     }
 
@@ -330,40 +371,33 @@ mod tests {
             multi line
             string.""#
         };
-        let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        // Expect the source without surrounding double quotes
-        let expected = vec![Token::String(&source[1..source.len() - 1])];
+        let mut scanner = Scanner::new(source);
+        let actual = scanner.next().unwrap();
+        let expected = Token::new_string(0, source);
         assert_eq!(actual, expected);
     }
 
     #[test]
     fn number_literals_valid() {
-        let scanner = Scanner::new("1 2.0 0.3 000.3 0.0003 123 123.123");
-        let actual = scanner.tokens().unwrap();
-        let expected = vec![
-            Token::Number("1"),
-            Token::Number("2.0"),
-            Token::Number("0.3"),
-            Token::Number("000.3"),
-            Token::Number("0.0003"),
-            Token::Number("123"),
-            Token::Number("123.123"),
-        ];
+        let source = "1 2.0 0.3 000.3 0.0003 123 123.123";
+        let scanner = Scanner::new(source);
+        let tokens = scanner.tokens();
+        let actual: Vec<_> = tokens.iter().map(|tok| tok.lexeme(source)).collect();
+        let expected = vec!["1", "2.0", "0.3", "000.3", "0.0003", "123", "123.123"];
         assert_eq!(actual, expected);
     }
 
     #[test]
     fn number_literals_invalid() {
-        let scanner = Scanner::new(".123 123. -123");
-        let actual = scanner.tokens().unwrap();
+        let scanner = Scanner::new(".123 456. -789");
+        let actual = scanner.tokens();
         let expected = vec![
-            Token::Dot,
-            Token::Number("123"),
-            Token::Number("123"),
-            Token::Dot,
-            Token::Minus,
-            Token::Number("123"),
+            Token::new_dot(0),
+            Token::new_number(1, "123"),
+            Token::new_number(5, "456"),
+            Token::new_dot(8),
+            Token::new_minus(10),
+            Token::new_number(11, "789"),
         ];
         assert_eq!(actual, expected);
     }
@@ -372,59 +406,39 @@ mod tests {
     fn reserved_keywords() {
         let source =
             "and class else false fun for if nil or print return super this true var while";
+        let words = source.split_whitespace();
         let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        let expected = vec![
-            Token::And,
-            Token::Class,
-            Token::Else,
-            Token::False,
-            Token::Fun,
-            Token::For,
-            Token::If,
-            Token::Nil,
-            Token::Or,
-            Token::Print,
-            Token::Return,
-            Token::Super,
-            Token::This,
-            Token::True,
-            Token::Var,
-            Token::While,
-        ];
-        assert_eq!(actual, expected);
+        for (token, word) in scanner.zip(words) {
+            assert!(matches!(token.kind(), TokenKind::Keyword(..)));
+            let actual = token.lexeme(&source);
+            let expected = word;
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]
     fn identifiers() {
         let source = "_ _test test_T1 test test_TEST a1 _42";
         let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        let expected = vec![
-            Token::Identifier("_"),
-            Token::Identifier("_test"),
-            Token::Identifier("test_T1"),
-            Token::Identifier("test"),
-            Token::Identifier("test_TEST"),
-            Token::Identifier("a1"),
-            Token::Identifier("_42"),
-        ];
-        assert_eq!(actual, expected);
+        let words = source.split_whitespace();
+        for (token, word) in scanner.zip(words) {
+            assert!(matches!(token.kind(), TokenKind::Identifier));
+            let actual = token.lexeme(source);
+            let expected = word;
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]
     fn maximal_munch() {
-        let source = "andor and or _and or_ Or";
+        let source = "andor _and or_ Or";
         let scanner = Scanner::new(source);
-        let actual = scanner.tokens().unwrap();
-        let expected = vec![
-            Token::Identifier("andor"),
-            Token::And,
-            Token::Or,
-            Token::Identifier("_and"),
-            Token::Identifier("or_"),
-            Token::Identifier("Or"),
-        ];
-        assert_eq!(actual, expected);
+        let words = source.split_whitespace();
+        for (token, word) in scanner.zip(words) {
+            assert!(matches!(token.kind(), TokenKind::Identifier));
+            let actual = token.lexeme(source);
+            let expected = word;
+            assert_eq!(actual, expected);
+        }
     }
 }

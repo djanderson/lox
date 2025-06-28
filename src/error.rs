@@ -22,7 +22,7 @@ pub enum Error {
         "unterminated comment, line {line_number}\n{source_line}\n{:->column_number$}",
         "^"
     )]
-    UnterminatedMultilineComment {
+    UnterminatedBlockComment {
         source_line: String,
         line_number: usize,
         column_number: usize,

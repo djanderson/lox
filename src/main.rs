@@ -4,7 +4,7 @@ use std::io::prelude::*;
 
 use anyhow::Result;
 use camino::Utf8PathBuf;
-use clap::{error::ErrorKind::ValueValidation, CommandFactory, Parser as ArgParser};
+use clap::{CommandFactory, Parser as ArgParser, error::ErrorKind::ValueValidation};
 use lox::parser::Parser;
 use lox::scanner::Scanner;
 
@@ -60,7 +60,7 @@ fn run_repl() -> Result<()> {
 
 fn run(input: String) -> Result<()> {
     let scanner = Scanner::new(&input);
-    let tokens = scanner.tokens()?;
+    let tokens = scanner.tokens();
     let mut parser = Parser::new(&tokens);
     let ast = parser.parse()?;
     println!("{}", ast);
