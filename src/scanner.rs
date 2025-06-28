@@ -41,11 +41,7 @@ impl<'a> Iterator for Scanner<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let c = self
-            .chars
-            .by_ref()
-            .skip_while(|c| c.is_whitespace())
-            .next()?;
+        let c = self.chars.by_ref().find(|c| !c.is_whitespace())?;
         let pos = self.chars.offset() - 1;
         let src = &self.source[pos..];
 
