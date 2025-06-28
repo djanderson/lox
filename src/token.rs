@@ -18,7 +18,7 @@ impl fmt::Debug for Token {
         f.debug_struct("Token")
             .field("kind", &self.kind)
             .field("span", &self.span)
-            .field("view", &format_args!("\"{}\"", self))
+            .field("view", &format_args!("\"{self}\""))
             .finish()
     }
 }
@@ -32,7 +32,7 @@ pub enum LexView<'a> {
 impl Token {
     pub fn new(kind: TokenKind, pos: usize, lexeme: &str) -> Self {
         let mut view = [0; 7];
-        let len = lexeme.as_bytes().len();
+        let len = lexeme.len();
         let view_len = min(len, 7);
         view[..view_len].copy_from_slice(&lexeme.as_bytes()[..view_len]);
         let span = Span {

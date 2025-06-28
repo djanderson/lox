@@ -117,7 +117,7 @@ impl<'a> Iterator for Scanner<'a> {
                         let mut depth = 1;
 
                         loop {
-                            let next_pos = src[len..].find(&['/', '*']);
+                            let next_pos = src[len..].find(['/', '*']);
 
                             // Ensure some block comment character was found and
                             // enough source remains to look for the second.
@@ -160,7 +160,7 @@ impl<'a> Iterator for Scanner<'a> {
                 loop {
                     let Some(quote_pos) = src[len..].find('"') else {
                         self.chars.by_ref().count(); // drain scanner
-                        return Some(Token::new_unterminated_string(pos, &src));
+                        return Some(Token::new_unterminated_string(pos, src));
                     };
 
                     len += quote_pos + 1;
@@ -194,7 +194,7 @@ impl<'a> Iterator for Scanner<'a> {
                 }
 
                 if len > 1 {
-                    self.chars.nth((len as usize) - 2); // advance scanner past number
+                    self.chars.nth(len - 2); // advance scanner past number
                 }
 
                 Token::new_number(pos, &src[..len])

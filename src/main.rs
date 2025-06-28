@@ -63,7 +63,7 @@ fn run(input: String) -> Result<()> {
     let tokens = scanner.tokens();
     let mut parser = Parser::new(&tokens);
     let ast = parser.parse()?;
-    println!("{}", ast);
+    println!("{ast}");
     Ok(())
 }
 

@@ -33,8 +33,8 @@ impl fmt::Display for Expr<'_> {
                 right,
             } => write!(f, "({operator} {left} {right})"),
             Expr::Grouping { expression } => write!(f, "(group {expression})"),
-            Expr::Literal { value } => write!(f, "{}", value),
-            Expr::Unary { operator, right } => write!(f, "({} {})", operator, right),
+            Expr::Literal { value } => write!(f, "{value}"),
+            Expr::Unary { operator, right } => write!(f, "({operator} {right})"),
         }
     }
 }
